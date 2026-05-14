@@ -159,31 +159,6 @@ static void printJSON(NSDictionary *dict) {
     }
 }
 
-// Compute the current playback position from a snapshot.
-//
-// MediaRemote reports kMRMediaRemoteNowPlayingInfoElapsedTime as a snapshot
-// captured at kMRMediaRemoteNowPlayingInfoTimestamp.  To get the live
-// position we advance the snapshot by (now - timestamp) * playbackRate.
-//
-// Falls back to the raw snapshot if timestamp is missing.
-static double computeLiveElapsedTime(NSDictionary *info) {
-    NSNumber *elapsedNum = info[@"kMRMediaRemoteNowPlayingInfoElapsedTime"];
-    if (!elapsedNum) return 0.0;
-    double elapsed = [elapsedNum doubleValue];
-
-    id timestamp = info[@"kMRMediaRemoteNowPlayingInfoTimestamp"];
-    if (![timestamp isKindOfClass:[NSDate class]]) return elapsed;
-
-    NSNumber *rateNum = info[@"kMRMediaRemoteNowPlayingInfoPlaybackRate"];
-    double rate = rateNum ? [rateNum doubleValue] : 1.0;
-    if (rate == 0.0) return elapsed;
-
-    NSTimeInterval delta = [[NSDate date] timeIntervalSinceDate:(NSDate *)timestamp];
-    if (delta < 0) return elapsed;
-
-    return elapsed + (delta * rate);
-}
-
 static id getValueForKey(NSDictionary *info, NSString *key) {
     NSObject *rawValue = [info objectForKey:key];
     if (!rawValue) return nil;
@@ -191,8 +166,6 @@ static id getValueForKey(NSDictionary *info, NSString *key) {
     if ([key isEqualToString:@"kMRMediaRemoteNowPlayingInfoArtworkData"] ||
         [key isEqualToString:@"kMRMediaRemoteNowPlayingInfoClientPropertiesData"]) {
         return [(NSData *)rawValue base64EncodedStringWithOptions:0];
-    } else if ([key isEqualToString:@"kMRMediaRemoteNowPlayingInfoElapsedTime"]) {
-        return @(computeLiveElapsedTime(info));
     }
     return rawValue;
 }
