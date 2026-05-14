@@ -380,6 +380,16 @@ static NSDictionary *LegacyInfoDictFromHelperJSON(NSDictionary *json) {
         if (date) info[@"kMRMediaRemoteNowPlayingInfoTimestamp"] = date;
     }
 
+    // Some sources (notably browsers) leave playbackRate at 1.0 when paused
+    // and only signal pause via the "playing" boolean.  Force the effective
+    // playbackRate to 0 when the source reports it as not playing, so that
+    // computeLiveElapsedTime() and consumers of `get playbackRate` see the
+    // true current state.
+    id playing = json[@"playing"];
+    if ([playing isKindOfClass:[NSNumber class]] && ![playing boolValue]) {
+        info[@"kMRMediaRemoteNowPlayingInfoPlaybackRate"] = @(0.0);
+    }
+
     return ([info count] > 0) ? info : nil;
 }
 
