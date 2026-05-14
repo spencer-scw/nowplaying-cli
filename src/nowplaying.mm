@@ -159,6 +159,31 @@ static void printJSON(NSDictionary *dict) {
     }
 }
 
+// Compute the current playback position from a snapshot.
+//
+// MediaRemote reports kMRMediaRemoteNowPlayingInfoElapsedTime as a snapshot
+// captured at kMRMediaRemoteNowPlayingInfoTimestamp.  To get the live
+// position we advance the snapshot by (now - timestamp) * playbackRate.
+//
+// Falls back to the raw snapshot if timestamp is missing.
+static double computeLiveElapsedTime(NSDictionary *info) {
+    NSNumber *elapsedNum = info[@"kMRMediaRemoteNowPlayingInfoElapsedTime"];
+    if (!elapsedNum) return 0.0;
+    double elapsed = [elapsedNum doubleValue];
+
+    id timestamp = info[@"kMRMediaRemoteNowPlayingInfoTimestamp"];
+    if (![timestamp isKindOfClass:[NSDate class]]) return elapsed;
+
+    NSNumber *rateNum = info[@"kMRMediaRemoteNowPlayingInfoPlaybackRate"];
+    double rate = rateNum ? [rateNum doubleValue] : 1.0;
+    if (rate == 0.0) return elapsed;
+
+    NSTimeInterval delta = [[NSDate date] timeIntervalSinceDate:(NSDate *)timestamp];
+    if (delta < 0) return elapsed;
+
+    return elapsed + (delta * rate);
+}
+
 static id getValueForKey(NSDictionary *info, NSString *key) {
     NSObject *rawValue = [info objectForKey:key];
     if (!rawValue) return nil;
@@ -167,9 +192,7 @@ static id getValueForKey(NSDictionary *info, NSString *key) {
         [key isEqualToString:@"kMRMediaRemoteNowPlayingInfoClientPropertiesData"]) {
         return [(NSData *)rawValue base64EncodedStringWithOptions:0];
     } else if ([key isEqualToString:@"kMRMediaRemoteNowPlayingInfoElapsedTime"]) {
-        MRContentItem *contentItem = [[objc_getClass("MRContentItem") alloc]
-                                      initWithNowPlayingInfo:(__bridge NSDictionary *)info];
-        return @(contentItem.metadata.calculatedPlaybackPosition);
+        return @(computeLiveElapsedTime(info));
     }
     return rawValue;
 }
@@ -344,6 +367,17 @@ static NSDictionary *LegacyInfoDictFromHelperJSON(NSDictionary *json) {
         } else {
             info[legacyKey] = value;
         }
+    }
+
+    // Parse the helper's ISO-8601 "timestamp" into an NSDate so that
+    // computeLiveElapsedTime() can advance the elapsedTime snapshot.
+    id ts = json[@"timestamp"];
+    if ([ts isKindOfClass:[NSString class]]) {
+        static NSISO8601DateFormatter *fmt = nil;
+        static dispatch_once_t once;
+        dispatch_once(&once, ^{ fmt = [[NSISO8601DateFormatter alloc] init]; });
+        NSDate *date = [fmt dateFromString:(NSString *)ts];
+        if (date) info[@"kMRMediaRemoteNowPlayingInfoTimestamp"] = date;
     }
 
     return ([info count] > 0) ? info : nil;
